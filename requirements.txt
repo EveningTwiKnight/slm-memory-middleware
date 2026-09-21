@@ -1,0 +1,20 @@
+# 核心依赖
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+httpx
+python-dotenv
+loguru
+openai
+
+# 存储
+sqlalchemy
+aiosqlite
+
+# 检索（含 torch，体积较大）
+chromadb
+sentence-transformers
+
+# 演示界面
+gradio

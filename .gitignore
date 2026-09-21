@@ -1,0 +1,40 @@
+# 虚拟环境
+.venv/
+venv/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 密钥：绝对不能提交
+.env
+
+# 数据与模型缓存（体积大，不入库）
+*.db
+*.sqlite3
+chroma_data/
+logs/
+data/
+models/
+.cache/
+
+# pip 临时解包目录（工作区内，避免沙箱权限问题）
+.piptmp/
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+
+# Docker 挂载的 HuggingFace 缓存回退目录
+.hf_cache/
+
+# 评估报告是生成的产物，不入库（README 里有复现命令）
+eval/reports/
+
+# 开发笔记（仅本地保留，不入库）
+docs/
+
+# 测试用的临时 HuggingFace 缓存（CI 模拟）
+.hf_ci_sim/

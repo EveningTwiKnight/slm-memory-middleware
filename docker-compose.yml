@@ -1,0 +1,84 @@
+# 一键起中间件（含持久化卷）
+#
+# 用法：
+#   1. 先准备好 .env（从 .env.example 复制并填 Key）
+#   2. 确保嵌入模型已下载到宿主机缓存（见下方注释）
+#   3. docker compose up -d
+#   4. 打开 http://127.0.0.1:8000/docs
+#
+# 为什么不在这里放 Redis / 向量库容器？
+# 因为当前实现用的是 SQLite + Chroma 本地文件 + 进程内缓存 —— 全都不需要独立服务。
+# 到真要上多实例时再加（见文档"上生产要改什么"），那时 compose 大概长这样：
+#   services: middleware, redis, qdrant, postgres
+# 现在加进去属于过度设计。
+
+services:
+  middleware:
+    build: .
+    image: slm-memory-middleware:latest
+    container_name: slm-memory-mw
+
+    ports:
+      - "8000:8000"
+
+    env_file:
+      - .env
+
+    volumes:
+      # ---- 数据持久化 ----
+      # 不挂卷的话，容器重启记忆就没了 —— 而这个项目的核心就是"记得住"
+      - ./data:/app/data                  # SQLite 数据库
+      - ./chroma_data:/app/chroma_data    # 向量库
+      - ./logs:/app/logs                  # 日志
+
+      # ---- 嵌入模型 ----
+      # 模型约 100MB，构建进镜像会让镜像变大且难更新。
+      # 推荐做法：先在宿主机下载好，再挂进容器。
+      # Windows 宿主机路径（把 <用户名> 换成你的）：
+      #   - C:/Users/<用户名>/.cache/huggingface:/root/.cache/huggingface:ro
+      # Mac / Linux：
+      #   - ~/.cache/huggingface:/root/.cache/huggingface:ro
+      #
+      # 如果没挂，容器里 HF_HUB_OFFLINE=1 会导致模型加载失败。
+      # 那就改成联网下载一次：
+      #   docker compose run --rm -e HF_HUB_OFFLINE=0 middleware \
+      #     python -c "from sentence_transformers import SentenceTransformer; \
+      #                SentenceTransformer('BAAI/bge-small-zh-v1.5')"
+      - ${HF_CACHE:-./.hf_cache}:/root/.cache/huggingface
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+    # 资源限制：嵌入模型 + torch 大概占 1.5G 内存，别让它把宿主机吃干
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # 演示用的接入页面（可选）
+  # 它和中间件在同一个进程里（为了演示方便），生产环境应该分开部署
+  web-demo:
+    build: .
+    image: slm-memory-middleware:latest
+    container_name: slm-memory-mw-web
+    command: ["python", "-m", "web.server"]
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./chroma_data:/app/chroma_data
+      - ./logs:/app/logs
+      - ${HF_CACHE:-./.hf_cache}:/root/.cache/huggingface
+    depends_on:
+      middleware:
+        condition: service_healthy
+    profiles:
+      - demo          # 默认不启动，需要时加 --profile demo

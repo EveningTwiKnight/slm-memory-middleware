@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: 测试
+    runs-on: ubuntu-latest
+
+    env:
+      # 这三个是给"跑测试"阶段用的：模型已经在上一步下好了，测试阶段强制离线，
+      # 避免每个测试脚本都去联网检查模型更新（那会白等好几分钟）。
+      # 注意 HF_HOME 要指向缓存目录，离线标志才找得到模型。
+      HF_HOME: ${{ github.workspace }}/.hf_cache
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_ENDPOINT: https://hf-mirror.com
+      # 关掉符号链接：huggingface_hub 默认用 symlink 把快照指向 blob 目录，
+      # 在不支持 symlink 的环境里会在下载的最后一步失败。关掉后改用直接复制。
+      HF_HUB_DISABLE_SYMLINKS: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # torch 装 CPU 版就够（这里只用来跑嵌入模型，不需要 GPU）
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+                      -r requirements.txt
+
+      # ============================================================
+      # 关键一步：把嵌入模型下下来并缓存
+      #
+      # 为什么必须单独一步？
+      # 测试阶段是离线的（HF_HUB_OFFLINE=1）。如果模型不在缓存里，
+      # 任何需要嵌入向量的测试都会报：
+      #   OSError: We couldn't connect to '...' and couldn't find them in the cached files
+      # 所以必须先联网把模型准备好。
+      # ============================================================
+      - name: 缓存嵌入模型
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.hf_cache
+          key: hf-bge-small-zh-v1.5-v1
+
+      - name: 下载嵌入模型（缓存未命中时）
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        env:
+          # 下载阶段必须联网，所以把离线标志取消掉
+          HF_HUB_OFFLINE: "0"
+          TRANSFORMERS_OFFLINE: "0"
+        run: |
+          python -c "from sentence_transformers import SentenceTransformer; m = SentenceTransformer('BAAI/bge-small-zh-v1.5'); print('模型就绪，向量维度:', len(m.encode(['验证'])[0]))"
+
+      - name: 语法检查
+        run: python -m compileall -q app eval tests scripts web
+
+      # 只跑不需要真实大模型 Key 的测试。
+      # 这些测试要么是纯逻辑（不需要模型），要么只需要本地嵌入模型（上一步已备好）。
+      - name: 跑测试
+        env:
+          LLM_API_KEY: sk-dummy-for-ci
+        run: |
+          python -m tests.test_api --offline
+          python -m tests.test_memory
+          python -m tests.test_extractor --offline
+          python -m tests.test_emotion --offline
+          python -m tests.test_budget --offline
+          python -m tests.test_retrieval --offline
+          python -m tests.test_intent
+          python -m web.verify_panel
+
+      - name: 数据库结构自检
+        run: python -m scripts.inspect_db
