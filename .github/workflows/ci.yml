@@ -75,6 +75,7 @@ jobs:
           LLM_API_KEY: sk-dummy-for-ci
         run: |
           python -m tests.test_api --offline
+          python -m tests.test_openai_api
           python -m tests.test_memory
           python -m tests.test_extractor --offline
           python -m tests.test_emotion --offline

@@ -90,6 +90,7 @@ LLM_API_KEY=sk-你的key
 ```bash
 .venv\Scripts\python.exe -m tests.test_connection   # 模型连通性（需要 Key）
 .venv\Scripts\python.exe -m tests.test_api          # 接口冒烟（不需要 Key）
+.venv\Scripts\python.exe -m tests.test_openai_api   # OpenAI 兼容入口，30 项（不需要 Key）
 ```
 
 **不想先搞 Key？** 大部分测试不需要 Key，可以直接跑：
@@ -134,12 +135,39 @@ LLM_API_KEY=sk-你的key
 | http://127.0.0.1:8000/docs | **交互式接口文档**（FastAPI 根据代码自动生成，可以直接在页面上点着调接口） |
 | http://127.0.0.1:8000/health | 健康检查，返回服务状态与当前模型名 |
 | `/v1/debug/prompt?user_id=xx&message=yy` | 看模型实际收到的完整提示词（调试用） |
+| `POST /v1/chat` | 普通对话（一次返回） |
+| `POST /v1/chat/stream` | 流式对话（SSE） |
+| `POST /v1/chat/completions` | **OpenAI 兼容入口**（见下一节） |
 
 > 上面这两个 `8000` 端口的地址只有在你用**方式二**启动时才是活的；
 > 如果用方式一（8080），所有接口也在 8080 上，例如
 > http://127.0.0.1:8080/docs 同样可用。
 
-## ★ 用 5 分钟验证它真的有用
+## 接入现成客户端（OpenAI 兼容）
+
+中间件同时提供 **OpenAI 兼容接口**，所以任何支持"自定义 Base URL"的客户端都能直接接，
+对方**不用写代码、不用装插件**：
+
+| 填什么 | 值 |
+|---|---|
+| Base URL | `http://127.0.0.1:8000/v1` |
+| API Key | 随便填（配了 `OPENAI_COMPAT_TOKEN` 就填那个值） |
+| 模型名 | `qwen-flash` 或 `slm-memory-middleware`（两个都认） |
+
+已按 OpenAI 协议逐项验证过（`tests/test_openai_api.py`，30 项）：AstrBot、Cherry Studio、
+NextChat、Open WebUI、LobeChat 这类客户端接上之后，自动获得跨会话记忆、知识库检索、
+情绪姿态和 token 预算调度 —— 客户端自己的代码一行都不用改。
+
+> ⚠️ **身份限制**：OpenAI 协议里没有"谁在说话"这个字段，身份只能靠请求里的 `user`
+> 字段（或 `X-User-Id` 头）带进来。拿不到身份时会退化成同一个共享身份：
+> 私聊大概等价于"按人记忆"，**群聊就只有"按群记忆"**。
+> 想在群里做到"我记得张三说过…"，需要走插件那条路（插件能拿到 sender_id / group_id）。
+>
+> ⚠️ **历史归属**：客户端会把它那侧的完整历史一起发过来，所以这个入口以请求里的
+> `messages` 为准，不再拼中间件自己的短期会话（两份历史都拼进去会重复）。
+> 中间件的会话表仍然照常落库，只用于查看和调试。
+
+
 
 如果只是想快速确认"这东西在干什么"，按这个顺序走：
 
@@ -220,7 +248,8 @@ app/
 ├─ main.py                 # 服务入口（含嵌入模型预热）
 ├─ api/                    # L1 接入层
 │  ├─ schemas.py           # 请求/响应数据模型
-│  └─ chat.py              # 全部接口实现
+│  ├─ chat.py              # 全部接口实现
+│  └─ openai_api.py        # OpenAI 兼容入口（给 AstrBot 这类客户端用）
 ├─ core/                   # 基础设施
 │  ├─ config.py            # 配置中心（读 .env）
 │  ├─ logging.py           # 日志 + trace_id
@@ -251,7 +280,7 @@ app/
 
 web/      接入示例 + 可用的聊天界面（单文件，零前端依赖）
 eval/     评估集定义与七配置对照执行器
-tests/    15 个验证脚本（多数不需要 API Key）
+tests/    16 个验证脚本（多数不需要 API Key）
 scripts/  4 个工具脚本（入库 / 查看 / 清理）
 ```
 

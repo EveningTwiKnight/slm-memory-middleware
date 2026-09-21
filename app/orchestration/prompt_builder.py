@@ -265,6 +265,7 @@ async def assemble(
     session_id: str | None = None,
     emotion_state=None,
     use_emotion: bool = True,
+    persona: str | None = None,
 ) -> PromptBundle:
     """取档案 + 语义检索记忆 + 情绪状态，然后组装提示词。
 
@@ -343,6 +344,9 @@ async def assemble(
         memories=memories,
         knowledge=knowledge,
         emotion_block=emotion_block,
+        # persona=None 时用内置的 DEFAULT_PERSONA。
+        # 传了就用调用方的（OpenAI 兼容入口会把客户端自带的人格传进来）。
+        persona=persona,
     )
     # 把打分细节挂上，便于调试和消融实验
     bundle.scored = scored  # type: ignore[attr-defined]

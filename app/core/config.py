@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.7
     llm_max_tokens: int = 1024
 
+    # --- OpenAI 兼容入口的访问令牌 ---
+    # 留空 = 不校验，任何 Bearer 都放行（本机自用最省事）。
+    # 一旦这个服务要让别人访问（或放到公网），必须设置它，
+    # 并把这个值填到客户端（AstrBot / Cherry Studio 等）的 API Key 里。
+    # 做这个入口顺手补上了"没有鉴权"这个短板 —— 至少入口这一层有了。
+    openai_compat_token: str = ""
+
     # --- 服务 ---
     app_host: str = "127.0.0.1"
     app_port: int = 8000

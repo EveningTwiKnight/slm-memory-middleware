@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat
+from app.api import chat, openai_api
 from app.api.schemas import HealthResponse
 from app.core.config import settings
 
@@ -72,6 +72,11 @@ app.add_middleware(
 )
 
 app.include_router(chat.router)
+
+# OpenAI 兼容入口：/v1/chat/completions、/v1/models
+# 让任何支持"自定义 Base URL"的客户端（AstrBot / Cherry Studio / NextChat …）
+# 不写一行代码就接上这层中间件。详见 app/api/openai_api.py 顶部说明。
+app.include_router(openai_api.router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["系统"], summary="健康检查")
